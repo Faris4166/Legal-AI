@@ -1,79 +1,229 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
-import { SendHorizonal, Bot, User, Sparkles } from "lucide-react"
+import { SendHorizonal, Bot, User, Sparkles, Scale, Gavel, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { transformToLegalLanguage } from "./actions"
+
+interface Message {
+  role: "user" | "ai";
+  content: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: string;
+}
 
 export default function Home() {
+  const searchParams = useSearchParams()
+  const sessionId = searchParams.get("id")
+
+  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Load session from API if ID in URL
+  useEffect(() => {
+    if (sessionId) {
+      fetch(`/api/history`)
+        .then(res => res.json())
+        .then((data: ChatSession[]) => {
+          const session = data.find(s => s.id === sessionId)
+          if (session) {
+            setMessages(session.messages)
+            setCurrentId(session.id)
+          }
+        })
+        .catch(err => console.error("Failed to load session:", err))
+    } else {
+      setMessages([])
+      setCurrentId(null)
+    }
+  }, [sessionId])
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [messages])
+
+  // Save/Update session whenever messages change
+  const saveSession = useCallback(async (msgs: Message[]) => {
+    if (msgs.length === 0) return;
+
+    const id = currentId || Date.now().toString();
+    if (!currentId) setCurrentId(id);
+
+    try {
+      await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          messages: msgs,
+          title: msgs[0].content.slice(0, 40) + (msgs[0].content.length > 40 ? "..." : "")
+        })
+      });
+    } catch (err) {
+      console.error("Failed to save history:", err);
+    }
+  }, [currentId]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      const timer = setTimeout(() => saveSession(messages), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, saveSession]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return
+
+    const userMsg = input.trim()
+    setInput("")
+    setMessages(prev => [...prev, { role: "user", content: userMsg }])
+    setIsLoading(true)
+
+    try {
+      const result = await transformToLegalLanguage(userMsg)
+      if (result.error) {
+        setMessages(prev => [...prev, { role: "ai", content: `ขออภัยครับ: ${result.error}` }])
+      } else {
+        setMessages(prev => [...prev, { role: "ai", content: result.content || "" }])
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: "ai", content: "เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง" }])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full w-full relative">
+    <div className="flex flex-col h-full w-full relative bg-muted/5">
       {/* Chat History Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 scroll-smooth">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 space-y-8 scroll-smooth"
+      >
 
         {/* Welcome Section */}
-        <div className="flex flex-col items-center justify-center py-10 opacity-70">
-          <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 ring-1 ring-primary/20 shadow-inner">
-            <Sparkles className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-2xl font-semibold tracking-tight">How can I help you today?</h2>
-        </div>
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 animate-in fade-in slide-in-from-bottom-5 duration-700">
+            <div className="h-20 w-20 rounded-3xl bg-primary/10 flex items-center justify-center mb-6 ring-1 ring-primary/20 shadow-2xl shadow-primary/5 rotate-3">
+              <Scale className="w-10 h-10 text-primary" />
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight text-center bg-linear-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">
+              ผู้ช่วยร่างภาษากฎหมาย AI
+            </h2>
+            <p className="text-sm text-muted-foreground mt-3 max-w-md text-center leading-relaxed font-medium">
+              พิมพ์เหตุการณ์หรือเรื่องราวของคุณด้วยภาษาปกติ <br />
+              ให้เราช่วยเรียบเรียงเป็นสำนวนที่ถูกต้องสำหรับใช้ในศาล
+            </p>
 
-        {/* User Message */}
-        <div className="flex flex-row justify-end items-end gap-3 max-w-[85%] ml-auto group">
-          <div className="flex flex-col gap-1 items-end">
-            <span className="text-xs text-muted-foreground px-1 font-medium select-none">You</span>
-            <div className="bg-primary text-primary-foreground p-4 rounded-2xl rounded-br-sm shadow-sm max-w-xl text-sm leading-relaxed whitespace-pre-wrap font-medium">
-              วิเคราะห์โค้คและจัด layout ทั้งหมดให้เหมาะสมกับ web chart ai
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-10 w-full max-w-lg">
+              <Button variant="outline" className="h-auto py-4 px-4 flex flex-col items-start gap-1 rounded-2xl border-primary/10 hover:border-primary/30 hover:bg-primary/5 transition-all" onClick={() => setInput("มีคนแอบโอนเงินออกจากบัญชีธนาคารของฉันตอนกลางคืน")}>
+                <span className="text-xs font-bold text-primary uppercase tracking-wider">ตัวอย่าง</span>
+                <span className="text-sm">"มีคนแอบโอนเงินออกจากบัญชี..."</span>
+              </Button>
+              <Button variant="outline" className="h-auto py-4 px-4 flex flex-col items-start gap-1 rounded-2xl border-primary/10 hover:border-primary/30 hover:bg-primary/5 transition-all" onClick={() => setInput("ฉันไปซื้อบ้านแต่เจ้าของโครงการไม่ยอมโอนโฉนดให้ตามนัด")}>
+                <span className="text-xs font-bold text-orange-500 uppercase tracking-wider">ตัวอย่าง</span>
+                <span className="text-sm">"ซื้อบ้านแต่เจ้าของไม่โอนโฉนด..."</span>
+              </Button>
             </div>
           </div>
-          <Avatar className="w-8 h-8 border shadow-sm select-none">
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback className="bg-muted"><User className="w-4 h-4" /></AvatarFallback>
-          </Avatar>
-        </div>
+        )}
 
-        {/* AI Message */}
-        <div className="flex flex-row justify-start items-end gap-3 max-w-[85%] mr-auto group">
-          <Avatar className="w-8 h-8 border shadow-sm ring-2 ring-primary/20 select-none">
-            <AvatarFallback className="bg-primary/5 text-primary"><Bot className="w-5 h-5" /></AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col gap-1 items-start">
-            <span className="text-xs text-muted-foreground px-1 font-medium select-none flex items-center gap-1.5"><Sparkles className="w-3 h-3 text-amber-500" /> Antigravity AI</span>
-            <Card className="bg-card text-card-foreground shadow-sm max-w-2xl border-primary/10 rounded-2xl rounded-bl-sm overflow-hidden backdrop-blur-sm">
-              <CardContent className="p-4 text-sm leading-relaxed prose prose-sm dark:prose-invert">
-                <p>Hello! I have started restructuring the entire layout to create a beautiful, full-screen AI chat UI experience for you.</p>
-                <ul className="mt-2 space-y-1 text-muted-foreground">
-                  <li>✨ <strong>Glassmorphism overlays</strong> for a premium feel</li>
-                  <li>📱 <strong>Responsive Flexbox</strong> so it works on all devices</li>
-                  <li>🎨 <strong>Refined Avatars & Bubbles</strong> for distinct messaging</li>
-                </ul>
-                <p className="mt-3">How does this look? Let me know if you want any specific color tweaks!</p>
-              </CardContent>
-            </Card>
+        {messages.map((msg, idx) => (
+          <div
+            key={idx}
+            className={`flex flex-row gap-4 max-w-[90%] sm:max-w-[80%] ${msg.role === "user" ? "ml-auto justify-end animate-in slide-in-from-right-2" : "mr-auto justify-start animate-in slide-in-from-left-2"}`}
+          >
+            {msg.role === "ai" && (
+              <Avatar className="w-9 h-9 border shadow-sm ring-2 ring-primary/10 mt-1 shrink-0">
+                <AvatarFallback className="bg-primary text-primary-foreground"><Gavel className="w-5 h-5" /></AvatarFallback>
+              </Avatar>
+            )}
+
+            <div className={`flex flex-col gap-1.5 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest px-2 group-hover:opacity-100 transition-opacity">
+                {msg.role === "user" ? "โจทย์ / ข้อเท็จจริง" : "ภาษากฎหมายที่แนะนำ"}
+              </span>
+              <div className={`
+                 p-4 rounded-3xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm
+                 ${msg.role === "user"
+                  ? "bg-primary text-primary-foreground rounded-tr-none font-medium"
+                  : "bg-card text-card-foreground border rounded-tl-none font-medium backdrop-blur-sm"}
+               `}>
+                {msg.content}
+              </div>
+            </div>
+
+            {msg.role === "user" && (
+              <Avatar className="w-9 h-9 border shadow-sm mt-1 shrink-0">
+                <AvatarFallback className="bg-muted"><User className="w-5 h-5" /></AvatarFallback>
+              </Avatar>
+            )}
           </div>
-        </div>
+        ))}
 
-        <div className="h-4"></div> {/* Spacer for bottom */}
+        {isLoading && (
+          <div className="flex flex-row justify-start items-start gap-4 mr-auto animate-pulse">
+            <Avatar className="w-9 h-9 border shrink-0">
+              <AvatarFallback className="bg-primary/10 text-primary"><Loader2 className="w-5 h-5 animate-spin" /></AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col gap-1.5 items-start">
+              <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest px-2">กำลังเรียบเรียงสำนวน...</span>
+              <div className="bg-muted/30 h-16 w-48 sm:w-64 rounded-3xl rounded-tl-none border border-dashed border-primary/20"></div>
+            </div>
+          </div>
+        )}
+
+        <div className="h-8"></div> {/* Bottom padding */}
       </div>
 
       {/* Input Area (Sticky Bottom) */}
-      <div className="p-4 bg-background/80 backdrop-blur-xl border-t shadow-[0_-10px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_-10px_40px_rgba(0,0,0,0.2)] z-20">
-        <div className="max-w-4xl mx-auto relative group flex items-end gap-2 bg-muted/40 p-2 rounded-2xl border border-input focus-within:ring-2 focus-within:ring-primary/40 focus-within:bg-background transition-all duration-300">
+      <div className="px-4 pb-6 pt-2 bg-linear-to-t from-background via-background to-transparent z-20">
+        <div className="max-w-4xl mx-auto relative group flex items-end gap-3 bg-card border shadow-2xl shadow-primary/5 p-2 rounded-[2rem] focus-within:ring-2 focus-within:ring-primary/20 transition-all duration-500">
           <Textarea
             id="chat-input"
-            placeholder="Message Antigravity AI..."
-            className="min-h-[44px] max-h-32 resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none p-3 field-sizing-content text-base sm:text-sm"
+            placeholder="อธิบายเหตุการณ์หรือคดีความของคุณที่นี่..."
+            className="min-h-[50px] max-h-40 resize-none border-0 focus-visible:ring-0 bg-transparent shadow-none p-4 field-sizing-content text-base sm:text-sm leading-relaxed"
             rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading}
           />
-          <div className="flex items-center gap-2 pr-1 pb-1">
-            <Button size="icon" className="h-9 w-9 rounded-xl shadow-md transition-transform hover:scale-105 active:scale-95 bg-primary text-primary-foreground">
-              <SendHorizonal className="h-4 w-4" />
-              <span className="sr-only">Send message</span>
+          <div className="flex items-center gap-2 pr-2 pb-2">
+            <Button
+              size="icon"
+              className="h-11 w-11 rounded-[1.25rem] shadow-lg transition-all hover:scale-105 active:scale-95 bg-primary text-primary-foreground disabled:opacity-50"
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+            >
+              <SendHorizonal className="h-5 w-5" />
             </Button>
           </div>
         </div>
-        <div className="text-center mt-3 mb-1">
-          <p className="text-[10px] sm:text-xs text-muted-foreground font-medium">AI can make mistakes. Consider verifying important information.</p>
+        <div className="text-center mt-4">
+          <p className="text-[10px] sm:text-xs text-muted-foreground/60 font-medium">คำศัพท์ที่แนะนำเป็นเพียงการประมวลผลของ AI โปรดปรึกษาผู้เชี่ยวชาญก่อนนำไปใช้งานจริง</p>
         </div>
       </div>
     </div>

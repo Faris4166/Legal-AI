@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
+import { Scale } from "lucide-react"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,7 +42,10 @@ export default function RootLayout({
               <main className="flex-1 flex flex-col h-full w-full bg-muted/20 relative">
                 <header className="flex h-14 items-center gap-4 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-10">
                   <SidebarTrigger />
-                  <div className="font-semibold text-lg tracking-tight bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">AI</div>
+                  <div className="font-semibold text-lg tracking-tight bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent flex items-center gap-2 select-none">
+                    <Scale className="w-5 h-5 text-primary shrink-0" />
+                    Legal AI
+                  </div>
                 </header>
                 <div className="flex-1 flex flex-col overflow-hidden relative">
                   {children}
