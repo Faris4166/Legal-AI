@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,7 +21,7 @@ interface ChatSession {
   updatedAt: string;
 }
 
-export default function Home() {
+function HomeContent() {
   const searchParams = useSearchParams()
   const sessionId = searchParams.get("id")
 
@@ -228,4 +228,16 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full w-full bg-muted/5">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
+  )
 }
